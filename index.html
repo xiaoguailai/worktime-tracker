@@ -1,17 +1,168 @@
+
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <title>工時紀錄系統</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <title>工時系統（整合修正版）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 1000px; margin: auto; }
+    h1 { font-size: 24px; margin-bottom: 10px; }
+    .date-block { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 6px; }
+    .weekday { font-weight: bold; margin-right: 10px; }
+    .shift-entry { margin: 5px 0; }
+    .controls { margin-bottom: 20px; }
+    .checkboxes label { margin-right: 10px; }
+    input[type="time"], input[type="text"], input[type="number"] { margin-right: 8px; padding: 4px; }
+    .label { display: inline-block; width: 60px; }
+    .totals { margin-top: 30px; padding: 10px; border-top: 2px solid #666; font-weight: bold; }
+  </style>
 </head>
 <body>
-  <h1>工時紀錄系統（本機版）</h1>
-  <label>日期：<input type="date" id="date"></label>
-  <div id="shifts"></div>
-  <button onclick="addShift()">新增班別</button>
-  <button onclick="saveLog()">儲存紀錄</button>
-  <div class="log" id="log"></div>
-  <script src="main.js"></script>
+  <h1>工時紀錄系統（整合修正版）</h1>
+  <div class="controls">
+    <label>民國年份：
+      <select id="year"></select>
+    </label>
+    <label>月份：
+      <select id="month"></select>
+    </label>
+    <button onclick="generateCalendar()">產生月曆</button>
+  </div>
+
+  <div id="calendar"></div>
+  <div class="totals" id="totalDisplay"></div>
+
+  <script>
+    const calendar = document.getElementById("calendar");
+    const yearSelect = document.getElementById("year");
+    const monthSelect = document.getElementById("month");
+    const totalDisplay = document.getElementById("totalDisplay");
+
+    const defaultTimes = {
+      D: ["08:50", "12:10"],
+      E: ["13:50", "17:10"],
+      N: ["17:50", "21:10"]
+    };
+
+    for (let y = 130; y >= 100; y--) {
+      const opt = document.createElement("option");
+      opt.value = y;
+      opt.textContent = `民國 ${y} 年`;
+      yearSelect.appendChild(opt);
+    }
+
+    for (let m = 1; m <= 12; m++) {
+      const opt = document.createElement("option");
+      opt.value = m;
+      opt.textContent = `${m}月`;
+      monthSelect.appendChild(opt);
+    }
+
+    function getWeekday(ymd) {
+      const week = ["日", "一", "二", "三", "四", "五", "六"];
+      return "星期" + week[new Date(ymd).getDay()];
+    }
+
+    function calcMinutes(start, end) {
+      if (!start || !end) return 0;
+      const [sh, sm] = start.split(':').map(Number);
+      const [eh, em] = end.split(':').map(Number);
+      let startMin = sh * 60 + sm;
+      let endMin = eh * 60 + em;
+      if (endMin < startMin) endMin += 1440;
+      return endMin - startMin;
+    }
+
+    function generateCalendar() {
+      const rocYear = parseInt(yearSelect.value);
+      const year = rocYear + 1911;
+      const month = parseInt(monthSelect.value);
+      const days = new Date(year, month, 0).getDate();
+      calendar.innerHTML = "";
+
+      for (let d = 1; d <= days; d++) {
+        const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        const weekday = getWeekday(dateStr);
+        const block = document.createElement("div");
+        block.className = "date-block";
+        block.dataset.date = dateStr;
+        block.innerHTML = `
+          <div><strong>${rocYear}/${month}/${d}</strong> <span class="weekday">${weekday}</span></div>
+          <div class="checkboxes">
+            班別：
+            <label><input type="checkbox" class="type" value="D">D</label>
+            <label><input type="checkbox" class="type" value="E">E</label>
+            <label><input type="checkbox" class="type" value="N">N</label>
+            <label>加班：<input type="number" class="overtime" min="0" style="width:60px;"> 分鐘</label>
+          </div>
+          <div class="shift-entry">
+            <span class="label">上班：</span><input type="time" class="start">
+            <span class="label">下班：</span><input type="time" class="end">
+            <input type="text" class="note" placeholder="備註">
+          </div>
+          <div class="result"></div>
+        `;
+        calendar.appendChild(block);
+      }
+
+      calendar.addEventListener("input", updateTotals);
+      calendar.addEventListener("change", updateTotals);
+      updateTotals();
+    }
+
+    function updateTotals() {
+      let totalMinutes = 0;
+      let totalOvertime = 0;
+      let dCount = 0, eCount = 0, nCount = 0;
+
+      const blocks = calendar.querySelectorAll(".date-block");
+      blocks.forEach(block => {
+        let mins = 0;
+        const result = block.querySelector(".result");
+        const typeInputs = block.querySelectorAll(".type");
+        const start = block.querySelector(".start").value;
+        const end = block.querySelector(".end").value;
+        const overtime = parseInt(block.querySelector(".overtime").value) || 0;
+
+        const hasTime = !!(start && end);
+        const hasType = [...typeInputs].some(i => i.checked);
+
+        if (hasTime) {
+          mins = calcMinutes(start, end);
+        }
+
+        if (hasTime) {
+          result.textContent = `本日總工時：${mins} 分鐘（加班：${overtime} 分鐘）`;
+          totalMinutes += mins;
+        } else if (hasType) {
+          result.textContent = `加班：${overtime} 分鐘`;
+        } else {
+          result.textContent = "";
+        }
+
+        totalOvertime += overtime;
+
+        if (!hasTime) {
+          if (block.querySelector('input[value="D"]').checked) dCount++;
+          if (block.querySelector('input[value="E"]').checked) eCount++;
+          if (block.querySelector('input[value="N"]').checked) nCount++;
+        }
+      });
+
+      const hr = Math.floor(totalMinutes / 60);
+      const min = totalMinutes % 60;
+      totalDisplay.innerHTML = `
+        本月總工時：${hr} 小時 ${min} 分鐘（共 ${totalMinutes} 分鐘）<br>
+        總加班：${totalOvertime} 分鐘<br>
+        班別統計：D：${dCount}　E：${eCount}　N：${nCount}
+      `;
+    }
+
+    const today = new Date();
+    yearSelect.value = today.getFullYear() - 1911;
+    monthSelect.value = today.getMonth() + 1;
+    generateCalendar();
+  </script>
 </body>
 </html>
